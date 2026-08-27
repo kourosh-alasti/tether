@@ -97,14 +97,16 @@ export class ModelScout {
 
   async refresh(): Promise<void> {
     // Coalesce concurrent refreshes (timer tick during a manual refresh).
-    this.refreshing ??= rankFreeCodingModels(this.client)
-      .then((ranking) => {
-        this.ranking = ranking;
-      })
-      .finally(() => {
-        this.refreshing = undefined;
-      });
+    this.refreshing ??= this.doRefresh();
     return this.refreshing;
+  }
+
+  private async doRefresh(): Promise<void> {
+    try {
+      this.ranking = await rankFreeCodingModels(this.client);
+    } finally {
+      this.refreshing = undefined;
+    }
   }
 
   /**

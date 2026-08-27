@@ -6,6 +6,7 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+
 import { ToolDefinition } from "./openrouter.js";
 
 const MAX_OUTPUT_CHARS = 30_000;
@@ -220,7 +221,7 @@ async function listDir(ctx: ToolContext, p: string): Promise<string> {
   if (entries.length === 0) return "(empty directory)";
   return entries
     .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
-    .sort()
+    .toSorted()
     .join("\n");
 }
 

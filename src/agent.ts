@@ -6,6 +6,7 @@
  */
 
 import * as os from "node:os";
+
 import {
   ApiError,
   ChatMessage,

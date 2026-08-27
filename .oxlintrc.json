@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "node", "promise", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "rules": {
+    // A terminal app: console *is* the UI.
+    "no-console": "off",
+    // Agent loops, REPLs, and stream consumption are inherently sequential.
+    "no-await-in-loop": "off"
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": ["dist"]
+}

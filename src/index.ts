@@ -11,6 +11,7 @@
 
 import * as readline from "node:readline/promises";
 import { parseArgs } from "node:util";
+
 import { Agent } from "./agent.js";
 import { OpenRouterClient } from "./openrouter.js";
 import { ModelScout, RankedModel } from "./scout.js";

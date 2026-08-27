@@ -206,7 +206,7 @@ export class OpenRouterClient {
       content,
       finishReason,
       toolCalls: [...toolCalls.entries()]
-        .sort(([a], [b]) => a - b)
+        .toSorted(([a], [b]) => a - b)
         .map(([i, tc]) => ({
           id: tc.id || `call_${i}`,
           type: "function" as const,
