@@ -1,0 +1,25 @@
+{
+  "name": "tether",
+  "version": "0.1.0",
+  "description": "A $0 agentic coding CLI: polls OpenRouter for the best free coding model and runs your tasks with it.",
+  "type": "module",
+  "bin": {
+    "tether": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
