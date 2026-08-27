@@ -54,6 +54,18 @@ export interface CompletionResult {
   finishReason: string | null;
 }
 
+export interface KeyInfo {
+  label: string;
+  limit: number | null;
+  limit_reset: string | null;
+  limit_remaining: number | null;
+  usage: number;
+  usage_daily: number;
+  usage_weekly: number;
+  usage_monthly: number;
+  is_free_tier: boolean;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -81,6 +93,27 @@ export class OpenRouterClient {
 
   get hasKey(): boolean {
     return Boolean(this.apiKey);
+  }
+
+  async getKeyInfo(): Promise<KeyInfo> {
+    if (!this.apiKey) {
+      throw new ApiError("No API key configured. Run `tether login`.", 401);
+    }
+    const res = await fetch(`${BASE_URL}/key`, {
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        ...APP_HEADERS,
+      },
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new ApiError(
+        extractErrorMessage(text) ?? `GET /key failed with status ${res.status}`,
+        res.status,
+      );
+    }
+    const body = (await res.json()) as { data: KeyInfo };
+    return body.data;
   }
 
   async listModels(params?: {

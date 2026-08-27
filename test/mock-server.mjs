@@ -37,6 +37,24 @@ createServer((req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify({ key: "mock-oauth-key" }));
   }
+  if (req.url === "/key" && req.method === "GET") {
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end(
+      JSON.stringify({
+        data: {
+          label: "tether CLI",
+          limit: null,
+          limit_reset: null,
+          limit_remaining: null,
+          usage: 0,
+          usage_daily: 0,
+          usage_weekly: 0,
+          usage_monthly: 0,
+          is_free_tier: true,
+        },
+      }),
+    );
+  }
   if (req.url.startsWith("/models")) {
     const url = new URL(req.url, "http://x");
     const data = url.searchParams.get("category") === "programming" ? programming : freeModels;

@@ -38,6 +38,8 @@ tether models               # show the current free coding model ranking
 tether watch                # poll the ranking on a schedule, print changes
 tether login --headless     # authenticate from an SSH or container session
 tether logout               # remove locally saved credentials
+tether whoami               # show the connected key, tier, and usage
+tether help                 # list every command and option
 ```
 
 Options:

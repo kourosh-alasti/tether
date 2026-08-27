@@ -8,6 +8,7 @@
  *   tether models           show the current free coding model ranking
  *   tether watch            poll the ranking on a schedule and print changes
  *   tether login            connect an OpenRouter account with OAuth PKCE
+ *   tether whoami           show the connected OpenRouter key and usage
  */
 
 import * as readline from "node:readline/promises";
@@ -31,6 +32,8 @@ Usage:
   tether watch [options]        poll the ranking on a schedule, print changes
   tether login [--headless]     connect to OpenRouter with OAuth PKCE
   tether logout                 remove the saved OpenRouter login
+  tether whoami                 show the connected key, tier, and usage
+  tether help                   show this help
 
 Options:
   --model <id>    pin a specific model (disables scouting/failover)
@@ -70,6 +73,10 @@ async function main(): Promise<void> {
   }
 
   const command = positionals[0] ?? "chat";
+  if (command === "help") {
+    console.log(HELP);
+    return;
+  }
   if (command === "login") {
     await login(values.headless);
     console.log(color.green(`✓ connected to OpenRouter\n  credentials: ${authFilePath()}`));
@@ -82,6 +89,8 @@ async function main(): Promise<void> {
   }
 
   const client = new OpenRouterClient(await getApiKey());
+  if (command === "whoami") return showIdentity(client);
+
   const scout = new ModelScout(client, values.model);
 
   switch (command) {
@@ -104,6 +113,31 @@ async function main(): Promise<void> {
 function fail(message: string): never {
   console.error(color.red(message));
   process.exit(1);
+}
+
+async function showIdentity(client: OpenRouterClient): Promise<void> {
+  if (!client.hasKey) {
+    fail("Not connected to OpenRouter. Run `tether login` first.");
+  }
+
+  const key = await client.getKeyInfo();
+  console.log(color.bold(key.label || "OpenRouter API key"));
+  console.log(`tier:             ${key.is_free_tier ? "free" : "pay-as-you-go"}`);
+  console.log(`usage today:      ${formatCredits(key.usage_daily)}`);
+  console.log(`usage this week:  ${formatCredits(key.usage_weekly)}`);
+  console.log(`usage this month: ${formatCredits(key.usage_monthly)}`);
+  console.log(`usage all time:   ${formatCredits(key.usage)}`);
+  if (key.limit !== null) {
+    console.log(`key limit:        ${formatCredits(key.limit)}`);
+    console.log(`limit remaining:  ${formatCredits(key.limit_remaining ?? 0)}`);
+  } else {
+    console.log("key limit:        none");
+  }
+  if (key.limit_reset) console.log(`limit reset:      ${key.limit_reset}`);
+}
+
+function formatCredits(value: number): string {
+  return `$${value.toFixed(4)}`;
 }
 
 function printRanking(models: readonly RankedModel[]): void {
