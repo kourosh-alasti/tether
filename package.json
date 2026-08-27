@@ -2,6 +2,7 @@
   "name": "tether",
   "version": "0.1.0",
   "description": "A $0 agentic coding CLI: polls OpenRouter for the best free coding model and runs your tasks with it.",
+  "license": "MIT",
   "bin": {
     "tether": "./dist/index.mjs"
   },
