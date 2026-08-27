@@ -7,12 +7,14 @@
  *   tether run "<task>"     one-shot task, then exit
  *   tether models           show the current free coding model ranking
  *   tether watch            poll the ranking on a schedule and print changes
+ *   tether login            connect an OpenRouter account with OAuth PKCE
  */
 
 import * as readline from "node:readline/promises";
 import { parseArgs } from "node:util";
 
 import { Agent } from "./agent.js";
+import { authFilePath, getApiKey, login, logout } from "./auth.js";
 import { OpenRouterClient } from "./openrouter.js";
 import { ModelScout, RankedModel } from "./scout.js";
 import { color, formatContext, Spinner } from "./ui.js";
@@ -27,16 +29,19 @@ Usage:
   tether run "<task>" [options] run one task and exit
   tether models                 show the current free coding model ranking
   tether watch [options]        poll the ranking on a schedule, print changes
+  tether login [--headless]     connect to OpenRouter with OAuth PKCE
+  tether logout                 remove the saved OpenRouter login
 
 Options:
   --model <id>    pin a specific model (disables scouting/failover)
   --poll <min>    ranking poll interval in minutes (default ${DEFAULT_POLL_MINUTES})
   --yolo          run shell commands without asking for approval
+  --headless      copy/paste OAuth flow for SSH, containers, or remote hosts
   -h, --help      show this help
   -v, --version   show version
 
 Environment:
-  OPENROUTER_API_KEY   required for chat (free at https://openrouter.ai/keys)
+  OPENROUTER_API_KEY   override the saved OAuth login
 
 Slash commands (interactive): /models /model <id> /clear /help /exit
 `;
@@ -47,6 +52,7 @@ async function main(): Promise<void> {
       model: { type: "string" },
       poll: { type: "string" },
       yolo: { type: "boolean", default: false },
+      headless: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
     },
@@ -63,9 +69,20 @@ async function main(): Promise<void> {
     fail("--poll must be a positive number of minutes");
   }
 
-  const client = new OpenRouterClient(process.env.OPENROUTER_API_KEY);
-  const scout = new ModelScout(client, values.model);
   const command = positionals[0] ?? "chat";
+  if (command === "login") {
+    await login(values.headless);
+    console.log(color.green(`✓ connected to OpenRouter\n  credentials: ${authFilePath()}`));
+    return;
+  }
+  if (command === "logout") {
+    const removed = await logout();
+    console.log(removed ? color.green("✓ logged out") : color.dim("not logged in"));
+    return;
+  }
+
+  const client = new OpenRouterClient(await getApiKey());
+  const scout = new ModelScout(client, values.model);
 
   switch (command) {
     case "models":
@@ -148,9 +165,9 @@ async function runSession(
 ): Promise<void> {
   if (!client.hasKey) {
     fail(
-      "OPENROUTER_API_KEY is not set.\n" +
-        "Create a free key at https://openrouter.ai/keys and export it:\n" +
-        "  export OPENROUTER_API_KEY=sk-or-...",
+      "Not connected to OpenRouter.\n" +
+        "Run `tether login` (or `tether login --headless` over SSH).\n" +
+        "OPENROUTER_API_KEY remains available as an environment override.",
     );
   }
 

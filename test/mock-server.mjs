@@ -33,6 +33,10 @@ const sse = (res, events) => {
 const delta = (d, finish = null) => ({ choices: [{ delta: d, finish_reason: finish }] });
 
 createServer((req, res) => {
+  if (req.url === "/auth/keys" && req.method === "POST") {
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ key: "mock-oauth-key" }));
+  }
   if (req.url.startsWith("/models")) {
     const url = new URL(req.url, "http://x");
     const data = url.searchParams.get("category") === "programming" ? programming : freeModels;

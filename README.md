@@ -13,14 +13,21 @@ A free model whose base slug appears in the coding ranking inherits that positio
 
 ## Setup
 
-Requires Node 20+. Create a free API key at <https://openrouter.ai/keys> (no credit card needed).
+Requires Node 22+. Install the CLI, then connect your OpenRouter account:
 
 ```bash
-npm install
-npm run build
-npm link          # makes the `tether` command available globally
-export OPENROUTER_API_KEY=sk-or-...
+pnpm install
+pnpm build
+pnpm link --global
+tether login
 ```
+
+`tether login` uses OAuth PKCE (S256), opens OpenRouter in your browser, and
+receives the one-time authorization code on an ephemeral localhost port. On
+SSH servers or in containers, use `tether login --headless` and paste the
+one-time code shown by OpenRouter. The resulting API key is saved under
+`~/.config/tether/auth.json` with user-only permissions. `OPENROUTER_API_KEY`
+still takes precedence when set, and `tether logout` removes the saved login.
 
 ## Usage
 
@@ -29,6 +36,8 @@ tether                      # interactive session in the current directory
 tether run "fix the failing test in src/parser.ts"
 tether models               # show the current free coding model ranking
 tether watch                # poll the ranking on a schedule, print changes
+tether login --headless     # authenticate from an SSH or container session
+tether logout               # remove locally saved credentials
 ```
 
 Options:
@@ -59,6 +68,6 @@ Free endpoints may also train on your prompts (check each model's data policy on
 ## Development
 
 ```bash
-npm run dev -- models       # run from source with tsx
-npm run typecheck
+pnpm dev
+pnpm typecheck
 ```
