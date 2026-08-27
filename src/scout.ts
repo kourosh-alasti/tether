@@ -95,6 +95,11 @@ export class ModelScout {
     this.pinnedModel = id;
   }
 
+  /** Resume automatic model selection after a model was pinned. */
+  useAutomatic(): void {
+    this.pinnedModel = undefined;
+  }
+
   async refresh(): Promise<void> {
     // Coalesce concurrent refreshes (timer tick during a manual refresh).
     this.refreshing ??= this.doRefresh();
@@ -133,12 +138,16 @@ export class ModelScout {
   }
 
   /** Best model right now: highest-ranked one that is not cooling down. */
-  pick(): RankedModel | undefined {
+  pick(excluded: ReadonlySet<string> = new Set()): RankedModel | undefined {
     if (this.pinnedModel) {
+      if (excluded.has(this.pinnedModel)) return undefined;
       return { id: this.pinnedModel, name: this.pinnedModel, contextLength: 0, created: 0 };
     }
     const now = Date.now();
-    return this.ranking.find((m) => (this.cooldownUntil.get(m.id) ?? 0) <= now) ?? this.ranking[0];
+    const candidates = this.ranking.filter((model) => !excluded.has(model.id));
+    return (
+      candidates.find((model) => (this.cooldownUntil.get(model.id) ?? 0) <= now) ?? candidates[0]
+    );
   }
 
   /** Bench a model that failed (rate limit, dead endpoint, ...) for a while. */

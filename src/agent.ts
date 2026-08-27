@@ -19,7 +19,6 @@ import { executeTool, ToolContext, toolDefinitions } from "./tools.js";
 import { color, Spinner } from "./ui.js";
 
 const MAX_STEPS_PER_TURN = 40;
-const MAX_MODEL_ATTEMPTS = 5;
 const DEFAULT_COOLDOWN_SECONDS = 90;
 
 function systemPrompt(cwd: string): string {
@@ -114,11 +113,15 @@ export class Agent {
   private async completeWithFailover(): Promise<CompletionResult> {
     const { scout, client } = this.options;
     let lastError: unknown;
+    const attempted = new Set<string>();
 
-    for (let attempt = 0; attempt < MAX_MODEL_ATTEMPTS; attempt++) {
-      const model = scout.pick();
+    while (true) {
+      const model = scout.pick(attempted);
       if (!model)
-        throw new Error("no free tool-calling models are currently available on OpenRouter");
+        throw lastError instanceof Error
+          ? lastError
+          : new Error("no free tool-calling models are currently available on OpenRouter");
+      attempted.add(model.id);
 
       if (model.id !== this.lastModel) {
         console.log(color.dim(`● model: ${model.id}`));
@@ -146,7 +149,7 @@ export class Agent {
         if (!firstToken) process.stdout.write("\n");
         lastError = err;
 
-        if (err instanceof ApiError && err.retryable && !scout.isPinned) {
+        if (err instanceof ApiError && isModelFailure(err) && !scout.isPinned) {
           if (isDailyLimit(err)) throw err; // account-wide; switching models won't help
           const cooldown = err.retryAfterSeconds ?? DEFAULT_COOLDOWN_SECONDS;
           scout.demote(model.id, cooldown);
@@ -160,13 +163,21 @@ export class Agent {
         throw err;
       }
     }
-    throw lastError instanceof Error ? lastError : new Error("all candidate models failed");
   }
 }
 
 /** The free-model daily cap applies account-wide, not per model. */
 function isDailyLimit(err: ApiError): boolean {
   return err.status === 429 && /per.day|daily/i.test(err.message);
+}
+
+function isModelFailure(err: ApiError): boolean {
+  return (
+    err.retryable ||
+    (err.status >= 400 &&
+      err.status < 500 &&
+      /only available|not available|no endpoints|provider|model/i.test(err.message))
+  );
 }
 
 function summarizeArgs(rawArgs: string): string {

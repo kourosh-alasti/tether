@@ -46,8 +46,20 @@ Options:
 Environment:
   OPENROUTER_API_KEY   override the saved OAuth login
 
-Slash commands (interactive): /models /model <id> /clear /help /exit
+Slash commands (interactive): /model /models /auto /status /whoami /pwd /clear /help /exit
 `;
+
+const SLASH_HELP = `${color.bold("Interactive commands")}
+  /model               choose from the sorted free-model list
+  /model <number|id>   switch directly to a listed free model
+  /models              refresh and show sorted free models
+  /auto                resume automatic selection and failover
+  /status              show the current model and selection mode
+  /whoami              show the connected OpenRouter key and usage
+  /pwd                 show the working directory
+  /clear               clear conversation history
+  /help                show this command list
+  /exit, /quit         end the session`;
 
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -262,7 +274,7 @@ async function runSession(
       const [cmd, ...rest] = input.split(/\s+/);
       if (cmd === "/exit" || cmd === "/quit") break;
       if (cmd === "/help") {
-        console.log(HELP);
+        console.log(SLASH_HELP);
       } else if (cmd === "/clear") {
         agent.reset();
         console.log(color.dim("conversation cleared"));
@@ -270,13 +282,24 @@ async function runSession(
         await refreshWithSpinner(scout);
         printRanking(scout.models);
       } else if (cmd === "/model") {
-        const id = rest.join(" ");
-        if (id) {
-          console.log(color.dim(`pinning ${id} for this session`));
-          scout.pin(id);
-        } else {
-          console.log(`current: ${scout.pick()?.id ?? "none"}${scout.isPinned ? " (pinned)" : ""}`);
-        }
+        await chooseModel(scout, rl, rest.join(" "));
+      } else if (cmd === "/auto") {
+        scout.useAutomatic();
+        scout.startPolling(pollMinutes * 60_000, (next) => {
+          console.log(
+            color.dim(`● scout: ${next.id} is now the best free coding model; switching`),
+          );
+        });
+        console.log(color.green(`automatic selection enabled → ${scout.pick()?.id ?? "none"}`));
+      } else if (cmd === "/status") {
+        console.log(`model: ${scout.pick()?.id ?? "none"}`);
+        console.log(
+          `selection: ${scout.isPinned ? "pinned" : `automatic (polling every ${pollMinutes}m)`}`,
+        );
+      } else if (cmd === "/whoami") {
+        await showIdentity(client);
+      } else if (cmd === "/pwd") {
+        console.log(process.cwd());
       } else {
         console.log(color.yellow(`unknown command ${cmd} — try /help`));
       }
@@ -292,6 +315,51 @@ async function runSession(
 
   rl.close();
   scout.stopPolling();
+}
+
+async function chooseModel(
+  scout: ModelScout,
+  terminal: readline.Interface,
+  selection: string,
+): Promise<void> {
+  await refreshWithSpinner(scout);
+  if (scout.models.length === 0) {
+    console.log(color.yellow("no free tool-calling models found right now"));
+    return;
+  }
+
+  if (!selection) {
+    printModelChoices(scout.models, scout.pick()?.id);
+    selection = (
+      await terminal.question(color.cyan("\nSelect a model by number (Enter to cancel): "))
+    ).trim();
+    if (!selection) return;
+  }
+
+  const number = Number(selection);
+  const chosen = Number.isInteger(number) ? scout.models[number - 1] : undefined;
+  const id = chosen?.id ?? selection;
+  const model = scout.models.find((candidate) => candidate.id === id);
+  if (!model) {
+    console.log(color.yellow(`"${selection}" is not in the current free-model list`));
+    return;
+  }
+
+  scout.pin(model.id);
+  console.log(
+    color.green(`switched to ${model.id}`) + color.dim(" (pinned; /auto to resume scouting)"),
+  );
+}
+
+function printModelChoices(models: readonly RankedModel[], currentId?: string): void {
+  const width = Math.max(...models.map((model) => model.id.length));
+  models.forEach((model, index) => {
+    const current = model.id === currentId ? color.green("●") : " ";
+    const rank = model.codingRank === undefined ? "unranked" : `#${model.codingRank + 1} coding`;
+    console.log(
+      `${current} ${String(index + 1).padStart(2)}. ${model.id.padEnd(width)}  ${formatContext(model.contextLength).padStart(5)} ctx  ${color.dim(rank)}`,
+    );
+  });
 }
 
 main().catch((err) => {

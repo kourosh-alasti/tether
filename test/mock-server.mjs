@@ -65,6 +65,17 @@ createServer((req, res) => {
   req.on("data", (c) => (body += c));
   req.on("end", () => {
     const { model, messages } = JSON.parse(body);
+    if (messages.some((message) => message.content?.includes("force rejection"))) {
+      res.writeHead(400, { "content-type": "application/json" });
+      return res.end(
+        JSON.stringify({
+          error: {
+            message: `${model} is only available on a supported agentic harness`,
+            code: 400,
+          },
+        }),
+      );
+    }
     if (model.startsWith("alpha/") && ++alphaCalls === 1) {
       // First hit on the top model: rate-limited -> harness must fail over to beta.
       res.writeHead(429, { "content-type": "application/json", "retry-after": "60" });

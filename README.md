@@ -50,7 +50,10 @@ Options:
 | `--poll <min>` | ranking poll interval in minutes (default 10, or `TETHER_POLL_MINUTES`) |
 | `--yolo`       | run shell commands without asking for approval                          |
 
-Inside an interactive session: `/models`, `/model <id>`, `/clear`, `/help`, `/exit`.
+Inside an interactive session, `/model` opens a numbered picker containing the
+current free models in coding-rank order. `/model <number|id>` switches
+directly; `/auto` resumes scheduled selection and failover. Other commands:
+`/models`, `/status`, `/whoami`, `/pwd`, `/clear`, `/help`, and `/exit`.
 
 ## Agent tools
 
