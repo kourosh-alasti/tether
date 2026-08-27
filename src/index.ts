@@ -40,7 +40,7 @@ Options:
   --model <provider:id> pin a verified-free model (disables failover)
   --poll <min>    ranking poll interval in minutes (default ${DEFAULT_POLL_MINUTES})
   --yolo          run shell commands without asking for approval
-  --headless      copy/paste OAuth flow for SSH, containers, or remote hosts
+  --headless      OpenRouter copy/paste OAuth flow for remote hosts
   -h, --help      show this help
   -v, --version   show version
 
@@ -93,6 +93,9 @@ async function main(): Promise<void> {
   }
   if (command === "login") {
     const provider = await providerArgument(positionals[1], "login");
+    if (provider === "vercel" && values.headless) {
+      fail("--headless is only supported by `tether login openrouter`");
+    }
     await login(provider, values.headless);
     console.log(color.green(`✓ connected to ${provider}\n  credentials: ${authFilePath()}`));
     return;

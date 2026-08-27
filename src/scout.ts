@@ -203,9 +203,7 @@ export class ModelScout {
     }
     const now = Date.now();
     const candidates = this.ranking.filter((model) => !excluded.has(model.key));
-    return (
-      candidates.find((model) => (this.cooldownUntil.get(model.key) ?? 0) <= now) ?? candidates[0]
-    );
+    return candidates.find((model) => (this.cooldownUntil.get(model.key) ?? 0) <= now);
   }
 
   /** Bench a model that failed (rate limit, dead endpoint, ...) for a while. */

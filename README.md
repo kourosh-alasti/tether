@@ -102,7 +102,7 @@ does not fall back to a paid id.
 OpenRouter rate-limits its free variants:
 
 - roughly 20 requests/minute across free models;
-- **50 free requests/day** if you've never bought credits, raised to **1000/day** once you've purchased at least $10 of credits (one-time top-up — you still pay nothing per request).
+- **50 free requests/day** for accounts with less than $10 in total purchased credits, raised to **1000/day** once total purchased credits reach at least $10 (one-time top-up — you still pay nothing per request).
 
 Agentic loops make one request per step, so a long task can burn through the
 allowance quickly. Vercel free-tier routes also have per-model limits. Tether
