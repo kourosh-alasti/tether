@@ -55,7 +55,9 @@ async function main(): Promise<void> {
   if (values.help) return void console.log(HELP);
   if (values.version) return void console.log(VERSION);
 
-  const pollMinutes = Number(values.poll ?? process.env.TETHER_POLL_MINUTES ?? DEFAULT_POLL_MINUTES);
+  const pollMinutes = Number(
+    values.poll ?? process.env.TETHER_POLL_MINUTES ?? DEFAULT_POLL_MINUTES,
+  );
   if (!Number.isFinite(pollMinutes) || pollMinutes <= 0) {
     fail("--poll must be a positive number of minutes");
   }
@@ -94,9 +96,10 @@ function printRanking(models: readonly RankedModel[]): void {
   const idWidth = Math.max(...models.map((m) => m.id.length));
   models.forEach((m, i) => {
     const pick = i === 0 ? color.green("▶") : " ";
-    const rank = m.codingRank !== undefined
-      ? color.cyan(`#${m.codingRank + 1} coding this week`)
-      : color.dim("unranked for coding");
+    const rank =
+      m.codingRank !== undefined
+        ? color.cyan(`#${m.codingRank + 1} coding this week`)
+        : color.dim("unranked for coding");
     console.log(
       `${pick} ${String(i + 1).padStart(2)}. ${m.id.padEnd(idWidth)}  ${color.dim(formatContext(m.contextLength).padStart(5) + " ctx")}  ${rank}`,
     );
@@ -156,7 +159,9 @@ async function runSession(
   const approveCommand = async (command: string): Promise<boolean> => {
     if (yolo) return true;
     if (!process.stdin.isTTY) {
-      console.log(color.yellow("⚠ no TTY to approve shell command; declining (use --yolo to auto-approve)"));
+      console.log(
+        color.yellow("⚠ no TTY to approve shell command; declining (use --yolo to auto-approve)"),
+      );
       return false;
     }
     const answer = await rl.question(
@@ -183,13 +188,19 @@ async function runSession(
   }
 
   const best = scout.pick();
-  console.log(color.bold(`tether v${VERSION}`) + color.dim(` — free agentic coding · ${process.cwd()}`));
-  console.log(color.dim(`model: ${best?.id ?? "none"} · re-scouting every ${pollMinutes}m · /help for commands`));
+  console.log(
+    color.bold(`tether v${VERSION}`) + color.dim(` — free agentic coding · ${process.cwd()}`),
+  );
+  console.log(
+    color.dim(
+      `model: ${best?.id ?? "none"} · re-scouting every ${pollMinutes}m · /help for commands`,
+    ),
+  );
 
   while (true) {
     let input: string;
     try {
-      input = (await rl.question(color.cyan("\n❯ ") )).trim();
+      input = (await rl.question(color.cyan("\n❯ "))).trim();
     } catch {
       break; // stdin closed (ctrl+d)
     }
@@ -232,6 +243,6 @@ async function runSession(
 }
 
 main().catch((err) => {
-  console.error(color.red(err instanceof Error ? err.stack ?? err.message : String(err)));
+  console.error(color.red(err instanceof Error ? (err.stack ?? err.message) : String(err)));
   process.exit(1);
 });

@@ -33,11 +33,11 @@ tether watch                # poll the ranking on a schedule, print changes
 
 Options:
 
-| Flag | Effect |
-| --- | --- |
-| `--model <id>` | pin a specific model; disables scouting and failover |
+| Flag           | Effect                                                                  |
+| -------------- | ----------------------------------------------------------------------- |
+| `--model <id>` | pin a specific model; disables scouting and failover                    |
 | `--poll <min>` | ranking poll interval in minutes (default 10, or `TETHER_POLL_MINUTES`) |
-| `--yolo` | run shell commands without asking for approval |
+| `--yolo`       | run shell commands without asking for approval                          |
 
 Inside an interactive session: `/models`, `/model <id>`, `/clear`, `/help`, `/exit`.
 

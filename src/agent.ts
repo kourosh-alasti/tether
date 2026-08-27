@@ -6,7 +6,13 @@
  */
 
 import * as os from "node:os";
-import { ApiError, ChatMessage, CompletionResult, OpenRouterClient, ToolCall } from "./openrouter.js";
+import {
+  ApiError,
+  ChatMessage,
+  CompletionResult,
+  OpenRouterClient,
+  ToolCall,
+} from "./openrouter.js";
 import { ModelScout } from "./scout.js";
 import { executeTool, ToolContext, toolDefinitions } from "./tools.js";
 import { color, Spinner } from "./ui.js";
@@ -83,10 +89,20 @@ export class Agent {
   }
 
   private async executeAndReport(call: ToolCall): Promise<string> {
-    console.log(`${color.magenta("⚒")} ${color.bold(call.function.name)} ${color.dim(summarizeArgs(call.function.arguments))}`);
-    const output = await executeTool(call.function.name, call.function.arguments, this.options.toolContext);
+    console.log(
+      `${color.magenta("⚒")} ${color.bold(call.function.name)} ${color.dim(summarizeArgs(call.function.arguments))}`,
+    );
+    const output = await executeTool(
+      call.function.name,
+      call.function.arguments,
+      this.options.toolContext,
+    );
     const firstLine = output.split("\n", 1)[0] ?? "";
-    console.log(color.dim(`  ↳ ${firstLine.slice(0, 120)}${output.includes("\n") || firstLine.length > 120 ? " …" : ""}`));
+    console.log(
+      color.dim(
+        `  ↳ ${firstLine.slice(0, 120)}${output.includes("\n") || firstLine.length > 120 ? " …" : ""}`,
+      ),
+    );
     return output;
   }
 
@@ -100,7 +116,8 @@ export class Agent {
 
     for (let attempt = 0; attempt < MAX_MODEL_ATTEMPTS; attempt++) {
       const model = scout.pick();
-      if (!model) throw new Error("no free tool-calling models are currently available on OpenRouter");
+      if (!model)
+        throw new Error("no free tool-calling models are currently available on OpenRouter");
 
       if (model.id !== this.lastModel) {
         console.log(color.dim(`● model: ${model.id}`));
@@ -133,16 +150,16 @@ export class Agent {
           const cooldown = err.retryAfterSeconds ?? DEFAULT_COOLDOWN_SECONDS;
           scout.demote(model.id, cooldown);
           console.log(
-            color.yellow(`⚠ ${model.id} failed (${err.status}: ${err.message.slice(0, 120)}); trying next model`),
+            color.yellow(
+              `⚠ ${model.id} failed (${err.status}: ${err.message.slice(0, 120)}); trying next model`,
+            ),
           );
           continue;
         }
         throw err;
       }
     }
-    throw lastError instanceof Error
-      ? lastError
-      : new Error("all candidate models failed");
+    throw lastError instanceof Error ? lastError : new Error("all candidate models failed");
   }
 }
 

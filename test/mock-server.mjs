@@ -4,10 +4,22 @@
 import { createServer } from "node:http";
 
 const freeModels = [
-  { id: "alpha/coder-large:free", name: "Alpha Coder", created: 2, context_length: 1000000,
-    pricing: { prompt: "0", completion: "0" }, supported_parameters: ["tools"] },
-  { id: "beta/helper:free", name: "Beta Helper", created: 1, context_length: 128000,
-    pricing: { prompt: "0", completion: "0" }, supported_parameters: ["tools"] },
+  {
+    id: "alpha/coder-large:free",
+    name: "Alpha Coder",
+    created: 2,
+    context_length: 1000000,
+    pricing: { prompt: "0", completion: "0" },
+    supported_parameters: ["tools"],
+  },
+  {
+    id: "beta/helper:free",
+    name: "Beta Helper",
+    created: 1,
+    context_length: 128000,
+    pricing: { prompt: "0", completion: "0" },
+    supported_parameters: ["tools"],
+  },
 ];
 const programming = [{ id: "alpha/coder-large", created: 2, context_length: 1000000 }];
 
@@ -40,8 +52,16 @@ createServer((req, res) => {
     if (last.role === "user") {
       // Step 1: model asks to read the file (arguments split across chunks).
       return sse(res, [
-        delta({ tool_calls: [{ index: 0, id: "call_1", type: "function",
-          function: { name: "read_file", arguments: '{"path": "ma' } }] }),
+        delta({
+          tool_calls: [
+            {
+              index: 0,
+              id: "call_1",
+              type: "function",
+              function: { name: "read_file", arguments: '{"path": "ma' },
+            },
+          ],
+        }),
         delta({ tool_calls: [{ index: 0, function: { arguments: 'th_util.py"}' } }] }),
         delta({}, "tool_calls"),
       ]);
@@ -49,13 +69,31 @@ createServer((req, res) => {
     if (last.role === "tool" && last.content.includes("a - b")) {
       // Step 2: model fixes the bug.
       return sse(res, [
-        delta({ tool_calls: [{ index: 0, id: "call_2", type: "function",
-          function: { name: "edit_file", arguments:
-            JSON.stringify({ path: "math_util.py", old_string: "return a - b", new_string: "return a + b" }) } }] }),
+        delta({
+          tool_calls: [
+            {
+              index: 0,
+              id: "call_2",
+              type: "function",
+              function: {
+                name: "edit_file",
+                arguments: JSON.stringify({
+                  path: "math_util.py",
+                  old_string: "return a - b",
+                  new_string: "return a + b",
+                }),
+              },
+            },
+          ],
+        }),
         delta({}, "tool_calls"),
       ]);
     }
     // Step 3: done.
-    return sse(res, [delta({ content: "Fixed: add() now returns " }), delta({ content: "a + b." }), delta({}, "stop")]);
+    return sse(res, [
+      delta({ content: "Fixed: add() now returns " }),
+      delta({ content: "a + b." }),
+      delta({}, "stop"),
+    ]);
   });
 }).listen(4999, () => console.log("mock up"));

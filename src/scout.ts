@@ -136,9 +136,7 @@ export class ModelScout {
       return { id: this.pinnedModel, name: this.pinnedModel, contextLength: 0, created: 0 };
     }
     const now = Date.now();
-    return (
-      this.ranking.find((m) => (this.cooldownUntil.get(m.id) ?? 0) <= now) ?? this.ranking[0]
-    );
+    return this.ranking.find((m) => (this.cooldownUntil.get(m.id) ?? 0) <= now) ?? this.ranking[0];
   }
 
   /** Bench a model that failed (rate limit, dead endpoint, ...) for a while. */

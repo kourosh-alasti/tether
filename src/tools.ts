@@ -9,7 +9,16 @@ import * as path from "node:path";
 import { ToolDefinition } from "./openrouter.js";
 
 const MAX_OUTPUT_CHARS = 30_000;
-const SKIP_DIRS = new Set([".git", "node_modules", "dist", "build", ".next", "__pycache__", ".venv", "target"]);
+const SKIP_DIRS = new Set([
+  ".git",
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  "__pycache__",
+  ".venv",
+  "target",
+]);
 
 export interface ToolContext {
   cwd: string;
@@ -59,7 +68,10 @@ export const toolDefinitions: ToolDefinition[] = [
         type: "object",
         properties: {
           path: { type: "string" },
-          old_string: { type: "string", description: "Exact text to find (must match exactly once)." },
+          old_string: {
+            type: "string",
+            description: "Exact text to find (must match exactly once).",
+          },
           new_string: { type: "string", description: "Replacement text." },
         },
         required: ["path", "old_string", "new_string"],
