@@ -2,16 +2,9 @@ import { defineConfig } from "tsdown";
 
 export default defineConfig({
   name: "tether",
-  clean: true,
-  dts: {
-    enabled: true,
-  },
   entry: ["src/index.ts"],
-  exports: true,
+  // A CLI, not a library: no dts/exports (src/index.ts runs main() on import),
+  // and no minify so crash stack traces stay readable.
   failOnWarn: true,
-  format: ["esm"],
-  minify: true,
-  outDir: "dist",
   report: true,
-  treeshake: true,
 });
