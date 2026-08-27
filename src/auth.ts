@@ -8,11 +8,13 @@ import * as readline from "node:readline/promises";
 
 const OPENROUTER_URL = process.env.OPENROUTER_URL ?? "https://openrouter.ai";
 const API_URL = process.env.OPENROUTER_BASE_URL ?? `${OPENROUTER_URL}/api/v1`;
+const VERCEL_API_URL = process.env.VERCEL_AI_GATEWAY_BASE_URL ?? "https://ai-gateway.vercel.sh/v1";
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
 
+export type ProviderName = "openrouter" | "vercel";
+
 interface StoredAuth {
-  apiKey: string;
-  createdAt: string;
+  providers: Partial<Record<ProviderName, { apiKey: string; createdAt: string }>>;
 }
 
 export function authFilePath(): string {
@@ -23,38 +25,101 @@ export function authFilePath(): string {
   return join(configHome, "tether", "auth.json");
 }
 
-/** Environment credentials deliberately take precedence over a saved login. */
-export async function getApiKey(): Promise<string | undefined> {
-  if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
-
+/** Environment credentials deliberately take precedence over saved logins. */
+export async function getApiKeys(): Promise<Partial<Record<ProviderName, string>>> {
+  let saved: Partial<Record<ProviderName, { apiKey: string }>> = {};
   try {
-    const auth = JSON.parse(await readFile(authFilePath(), "utf8")) as Partial<StoredAuth>;
-    return typeof auth.apiKey === "string" && auth.apiKey.length > 0 ? auth.apiKey : undefined;
+    const auth = JSON.parse(await readFile(authFilePath(), "utf8")) as Partial<StoredAuth> & {
+      apiKey?: unknown;
+    };
+    // Migrate the original single-provider file without making users log in again.
+    saved =
+      auth.providers ??
+      (typeof auth.apiKey === "string" ? { openrouter: { apiKey: auth.apiKey } } : {});
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return undefined;
-    throw new Error(`could not read saved OpenRouter login: ${errorMessage(error)}`, {
-      cause: error,
-    });
+    if (code !== "ENOENT") {
+      throw new Error(`could not read saved login: ${errorMessage(error)}`, { cause: error });
+    }
+  }
+
+  return {
+    openrouter: process.env.OPENROUTER_API_KEY || saved.openrouter?.apiKey,
+    vercel: process.env.AI_GATEWAY_API_KEY || saved.vercel?.apiKey,
+  };
+}
+
+export async function chooseProvider(action: "login" | "logout"): Promise<ProviderName> {
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      `Choose a provider: \`tether ${action} openrouter\` or \`tether ${action} vercel\``,
+    );
+  }
+  const terminal = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    console.log("1. OpenRouter\n2. Vercel AI Gateway");
+    const answer = (await terminal.question(`Choose a provider to ${action} [1-2]: `)).trim();
+    if (answer === "1" || answer.toLowerCase() === "openrouter") return "openrouter";
+    if (answer === "2" || answer.toLowerCase() === "vercel") return "vercel";
+    throw new Error(`Unknown provider "${answer}"`);
+  } finally {
+    terminal.close();
   }
 }
 
-export async function login(headless: boolean): Promise<void> {
+export async function login(provider: ProviderName, headless: boolean): Promise<void> {
+  if (provider === "vercel") {
+    await loginVercel();
+    return;
+  }
+
   const verifier = randomBytes(32).toString("base64url");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
 
   const code = headless ? await getHeadlessCode(challenge) : await getLocalCallbackCode(challenge);
   const key = await exchangeCode(code, verifier);
-  await saveApiKey(key);
+  await saveApiKey("openrouter", key);
 }
 
-export async function logout(): Promise<boolean> {
+export async function logout(provider: ProviderName): Promise<boolean> {
   try {
-    await rm(authFilePath());
+    const auth = await readStoredAuth();
+    if (!auth.providers[provider]) return false;
+    delete auth.providers[provider];
+    if (Object.keys(auth.providers).length === 0) {
+      await rm(authFilePath());
+    } else {
+      await writeStoredAuth(auth);
+    }
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
+  }
+}
+
+async function loginVercel(): Promise<void> {
+  const url = "https://vercel.com/ai-gateway";
+  console.log(
+    "Create a Vercel AI Gateway API key, then paste it below.\n" +
+      "Tether will only use Gateway model ids explicitly marked as free-tier.\n\n" +
+      url,
+  );
+  openBrowser(url);
+
+  const terminal = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const key = (await terminal.question("\nAI Gateway API key: ")).trim();
+    if (!key) throw new Error("no API key entered");
+    const response = await fetch(`${VERCEL_API_URL}/models`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!response.ok) {
+      throw new Error(`Vercel rejected that API key (${response.status})`);
+    }
+    await saveApiKey("vercel", key);
+  } finally {
+    terminal.close();
   }
 }
 
@@ -184,17 +249,43 @@ async function exchangeCode(code: string, verifier: string): Promise<string> {
   return body.key;
 }
 
-async function saveApiKey(apiKey: string): Promise<void> {
+async function saveApiKey(provider: ProviderName, apiKey: string): Promise<void> {
+  const auth = await readStoredAuth();
+  auth.providers[provider] = { apiKey, createdAt: new Date().toISOString() };
+  await writeStoredAuth(auth);
+}
+
+async function readStoredAuth(): Promise<StoredAuth> {
+  try {
+    const parsed = JSON.parse(await readFile(authFilePath(), "utf8")) as Partial<StoredAuth> & {
+      apiKey?: unknown;
+      createdAt?: unknown;
+    };
+    if (parsed.providers) return { providers: parsed.providers };
+    if (typeof parsed.apiKey === "string") {
+      return {
+        providers: {
+          openrouter: {
+            apiKey: parsed.apiKey,
+            createdAt:
+              typeof parsed.createdAt === "string" ? parsed.createdAt : new Date().toISOString(),
+          },
+        },
+      };
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  return { providers: {} };
+}
+
+async function writeStoredAuth(auth: StoredAuth): Promise<void> {
   const path = authFilePath();
   const directory = dirname(path);
   const temporary = `${path}.${process.pid}.tmp`;
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await chmod(directory, 0o700);
-  await writeFile(
-    temporary,
-    `${JSON.stringify({ apiKey, createdAt: new Date().toISOString() } satisfies StoredAuth, null, 2)}\n`,
-    { mode: 0o600 },
-  );
+  await writeFile(temporary, `${JSON.stringify(auth, null, 2)}\n`, { mode: 0o600 });
   await rename(temporary, path);
   await chmod(path, 0o600);
 }

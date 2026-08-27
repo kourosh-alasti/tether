@@ -37,7 +37,7 @@ export interface ToolCall {
 export type ChatMessage =
   | { role: "system" | "user"; content: string }
   | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
-  | { role: "tool"; tool_call_id: string; content: string };
+  | { role: "tool"; tool_call_id: string; name?: string; content: string };
 
 export interface ToolDefinition {
   type: "function";
@@ -89,6 +89,8 @@ export class ApiError extends Error {
 }
 
 export class OpenRouterClient {
+  readonly provider = "openrouter" as const;
+
   constructor(private apiKey?: string) {}
 
   get hasKey(): boolean {
@@ -148,6 +150,9 @@ export class OpenRouterClient {
   ): Promise<CompletionResult> {
     if (!this.apiKey) {
       throw new ApiError("No API key configured. Set OPENROUTER_API_KEY.", 401);
+    }
+    if (!options.model.endsWith(":free")) {
+      throw new ApiError(`Refusing non-free OpenRouter model "${options.model}"`, 400);
     }
     const res = await fetch(`${BASE_URL}/chat/completions`, {
       method: "POST",

@@ -20,6 +20,25 @@ const freeModels = [
     pricing: { prompt: "0", completion: "0" },
     supported_parameters: ["tools"],
   },
+  {
+    id: "minimax/minimax-mock-free",
+    name: "Vercel Free Mock",
+    created: 3,
+    released: 3,
+    context_length: 256000,
+    context_window: 256000,
+    type: "language",
+    tags: ["free", "tool-use"],
+    pricing: {
+      input: "0",
+      output: "0",
+      input_tiers: [
+        { cost: "0", min: 0, max: 128000 },
+        { cost: "0", min: 128000 },
+      ],
+    },
+    supported_parameters: ["tools"],
+  },
 ];
 const programming = [{ id: "alpha/coder-large", created: 2, context_length: 1000000 }];
 

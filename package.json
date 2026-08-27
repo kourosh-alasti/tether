@@ -1,7 +1,7 @@
 {
   "name": "tether",
   "version": "0.1.0",
-  "description": "A $0 agentic coding CLI: polls OpenRouter for the best free coding model and runs your tasks with it.",
+  "description": "A $0 agentic coding CLI using verified-free OpenRouter and Vercel AI Gateway models.",
   "license": "MIT",
   "bin": {
     "tether": "./dist/index.mjs"
@@ -18,6 +18,9 @@
     "format": "oxfmt --check",
     "format:fix": "oxfmt",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ai": "^7.0.79"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

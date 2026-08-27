@@ -7,14 +7,8 @@
 
 import * as os from "node:os";
 
-import {
-  ApiError,
-  ChatMessage,
-  CompletionResult,
-  OpenRouterClient,
-  ToolCall,
-} from "./openrouter.js";
-import { ModelScout } from "./scout.js";
+import { ApiError, ChatMessage, CompletionResult, ToolCall } from "./openrouter.js";
+import { ModelScout, ProviderClient } from "./scout.js";
 import { executeTool, ToolContext, toolDefinitions } from "./tools.js";
 import { color, Spinner } from "./ui.js";
 
@@ -40,7 +34,7 @@ function systemPrompt(cwd: string): string {
 }
 
 export interface AgentOptions {
-  client: OpenRouterClient;
+  clients: readonly ProviderClient[];
   scout: ModelScout;
   toolContext: ToolContext;
 }
@@ -78,6 +72,7 @@ export class Agent {
         this.messages.push({
           role: "tool",
           tool_call_id: call.id,
+          name: call.function.name,
           content: await this.executeAndReport(call),
         });
       }
@@ -111,7 +106,7 @@ export class Agent {
    * the current one errors in a retryable way.
    */
   private async completeWithFailover(): Promise<CompletionResult> {
-    const { scout, client } = this.options;
+    const { scout, clients } = this.options;
     let lastError: unknown;
     const attempted = new Set<string>();
 
@@ -120,15 +115,18 @@ export class Agent {
       if (!model)
         throw lastError instanceof Error
           ? lastError
-          : new Error("no free tool-calling models are currently available on OpenRouter");
-      attempted.add(model.id);
+          : new Error("no verified-free tool-calling models are currently available");
+      attempted.add(model.key);
 
-      if (model.id !== this.lastModel) {
-        console.log(color.dim(`● model: ${model.id}`));
-        this.lastModel = model.id;
+      if (model.key !== this.lastModel) {
+        console.log(color.dim(`● model: ${model.key}`));
+        this.lastModel = model.key;
       }
 
-      this.spinner.start(`waiting for ${model.id}`);
+      const client = clients.find((candidate) => candidate.provider === model.provider);
+      if (!client) throw new Error(`not logged in to ${model.provider}`);
+
+      this.spinner.start(`waiting for ${model.key}`);
       let firstToken = true;
       try {
         const result = await client.chat(
@@ -152,10 +150,10 @@ export class Agent {
         if (err instanceof ApiError && isModelFailure(err) && !scout.isPinned) {
           if (isDailyLimit(err)) throw err; // account-wide; switching models won't help
           const cooldown = err.retryAfterSeconds ?? DEFAULT_COOLDOWN_SECONDS;
-          scout.demote(model.id, cooldown);
+          scout.demote(model.key, cooldown);
           console.log(
             color.yellow(
-              `⚠ ${model.id} failed (${err.status}: ${err.message.slice(0, 120)}); trying next model`,
+              `⚠ ${model.key} failed (${err.status}: ${err.message.slice(0, 120)}); trying next model`,
             ),
           );
           continue;

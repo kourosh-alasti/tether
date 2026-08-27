@@ -1,42 +1,43 @@
 #!/usr/bin/env node
 /**
- * tether — a $0 agentic coding CLI on top of OpenRouter's free models.
+ * tether — a $0 agentic coding CLI using verified-free provider models.
  *
  * Commands:
  *   tether                  interactive session in the current directory
  *   tether run "<task>"     one-shot task, then exit
  *   tether models           show the current free coding model ranking
  *   tether watch            poll the ranking on a schedule and print changes
- *   tether login            connect an OpenRouter account with OAuth PKCE
- *   tether whoami           show the connected OpenRouter key and usage
+ *   tether login [provider] connect OpenRouter or Vercel AI Gateway
+ *   tether whoami           show connected providers
  */
 
 import * as readline from "node:readline/promises";
 import { parseArgs } from "node:util";
 
 import { Agent } from "./agent.js";
-import { authFilePath, getApiKey, login, logout } from "./auth.js";
+import { authFilePath, chooseProvider, getApiKeys, login, logout, ProviderName } from "./auth.js";
 import { OpenRouterClient } from "./openrouter.js";
-import { ModelScout, RankedModel } from "./scout.js";
+import { ModelScout, ProviderClient, RankedModel } from "./scout.js";
 import { color, formatContext, Spinner } from "./ui.js";
+import { VercelClient } from "./vercel.js";
 
 const VERSION = "0.1.0";
 const DEFAULT_POLL_MINUTES = 10;
 
-const HELP = `tether v${VERSION} — $0 agentic coding on OpenRouter's free models
+const HELP = `tether v${VERSION} — $0 agentic coding with verified-free models
 
 Usage:
   tether [options]              interactive session in the current directory
   tether run "<task>" [options] run one task and exit
   tether models                 show the current free coding model ranking
   tether watch [options]        poll the ranking on a schedule, print changes
-  tether login [--headless]     connect to OpenRouter with OAuth PKCE
-  tether logout                 remove the saved OpenRouter login
-  tether whoami                 show the connected key, tier, and usage
+  tether login [provider]       connect to openrouter or vercel (prompts if omitted)
+  tether logout [provider]      remove one saved provider login
+  tether whoami                 show connected providers
   tether help                   show this help
 
 Options:
-  --model <id>    pin a specific model (disables scouting/failover)
+  --model <provider:id> pin a verified-free model (disables failover)
   --poll <min>    ranking poll interval in minutes (default ${DEFAULT_POLL_MINUTES})
   --yolo          run shell commands without asking for approval
   --headless      copy/paste OAuth flow for SSH, containers, or remote hosts
@@ -45,6 +46,7 @@ Options:
 
 Environment:
   OPENROUTER_API_KEY   override the saved OAuth login
+  AI_GATEWAY_API_KEY   override the saved Vercel AI Gateway login
 
 Slash commands (interactive): /model /models /auto /status /whoami /pwd /clear /help /exit
 `;
@@ -55,7 +57,7 @@ const SLASH_HELP = `${color.bold("Interactive commands")}
   /models              refresh and show sorted free models
   /auto                resume automatic selection and failover
   /status              show the current model and selection mode
-  /whoami              show the connected OpenRouter key and usage
+  /whoami              show connected providers and OpenRouter usage
   /pwd                 show the working directory
   /clear               clear conversation history
   /help                show this command list
@@ -90,20 +92,32 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "login") {
-    await login(values.headless);
-    console.log(color.green(`✓ connected to OpenRouter\n  credentials: ${authFilePath()}`));
+    const provider = await providerArgument(positionals[1], "login");
+    await login(provider, values.headless);
+    console.log(color.green(`✓ connected to ${provider}\n  credentials: ${authFilePath()}`));
     return;
   }
   if (command === "logout") {
-    const removed = await logout();
-    console.log(removed ? color.green("✓ logged out") : color.dim("not logged in"));
+    const provider = await providerArgument(positionals[1], "logout");
+    const removed = await logout(provider);
+    console.log(
+      removed
+        ? color.green(`✓ logged out of ${provider}`)
+        : color.dim(`not logged in to ${provider}`),
+    );
     return;
   }
 
-  const client = new OpenRouterClient(await getApiKey());
-  if (command === "whoami") return showIdentity(client);
+  const keys = await getApiKeys();
+  const clients: ProviderClient[] = [];
+  if (keys.openrouter) clients.push(new OpenRouterClient(keys.openrouter));
+  if (keys.vercel) clients.push(new VercelClient(keys.vercel));
+  if (command === "whoami") return showIdentity(clients);
+  if (clients.length === 0) {
+    fail("Not connected. Run `tether login` and choose OpenRouter or Vercel.");
+  }
 
-  const scout = new ModelScout(client, values.model);
+  const scout = new ModelScout(clients, values.model);
 
   switch (command) {
     case "models":
@@ -113,10 +127,10 @@ async function main(): Promise<void> {
     case "run": {
       const task = positionals.slice(1).join(" ").trim();
       if (!task) fail('usage: tether run "<task>"');
-      return runSession(client, scout, pollMinutes, values.yolo, task);
+      return runSession(clients, scout, pollMinutes, values.yolo, task);
     }
     case "chat":
-      return runSession(client, scout, pollMinutes, values.yolo);
+      return runSession(clients, scout, pollMinutes, values.yolo);
     default:
       fail(`unknown command "${command}"\n\n${HELP}`);
   }
@@ -127,25 +141,46 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-async function showIdentity(client: OpenRouterClient): Promise<void> {
-  if (!client.hasKey) {
-    fail("Not connected to OpenRouter. Run `tether login` first.");
+async function providerArgument(
+  value: string | undefined,
+  action: "login" | "logout",
+): Promise<ProviderName> {
+  if (value === undefined) return chooseProvider(action);
+  const normalized = value.toLowerCase();
+  if (normalized === "openrouter" || normalized === "vercel") return normalized;
+  fail(`Unknown provider "${value}". Choose openrouter or vercel.`);
+}
+
+async function showIdentity(clients: readonly ProviderClient[]): Promise<void> {
+  if (clients.length === 0) {
+    fail("Not connected. Run `tether login` first.");
   }
 
-  const key = await client.getKeyInfo();
-  console.log(color.bold(key.label || "OpenRouter API key"));
-  console.log(`tier:             ${key.is_free_tier ? "free" : "pay-as-you-go"}`);
-  console.log(`usage today:      ${formatCredits(key.usage_daily)}`);
-  console.log(`usage this week:  ${formatCredits(key.usage_weekly)}`);
-  console.log(`usage this month: ${formatCredits(key.usage_monthly)}`);
-  console.log(`usage all time:   ${formatCredits(key.usage)}`);
-  if (key.limit !== null) {
-    console.log(`key limit:        ${formatCredits(key.limit)}`);
-    console.log(`limit remaining:  ${formatCredits(key.limit_remaining ?? 0)}`);
-  } else {
-    console.log("key limit:        none");
+  for (const [index, client] of clients.entries()) {
+    if (index > 0) console.log("");
+    if (client.provider === "vercel") {
+      console.log(color.bold("Vercel AI Gateway"));
+      console.log("status:           connected");
+      console.log("model policy:     synthetic free-tier models only");
+      continue;
+    }
+
+    const key = await client.getKeyInfo();
+    console.log(color.bold(key.label || "OpenRouter API key"));
+    console.log(`provider:         openrouter`);
+    console.log(`tier:             ${key.is_free_tier ? "free" : "pay-as-you-go"}`);
+    console.log(`usage today:      ${formatCredits(key.usage_daily)}`);
+    console.log(`usage this week:  ${formatCredits(key.usage_weekly)}`);
+    console.log(`usage this month: ${formatCredits(key.usage_monthly)}`);
+    console.log(`usage all time:   ${formatCredits(key.usage)}`);
+    if (key.limit !== null) {
+      console.log(`key limit:        ${formatCredits(key.limit)}`);
+      console.log(`limit remaining:  ${formatCredits(key.limit_remaining ?? 0)}`);
+    } else {
+      console.log("key limit:        none");
+    }
+    if (key.limit_reset) console.log(`limit reset:      ${key.limit_reset}`);
   }
-  if (key.limit_reset) console.log(`limit reset:      ${key.limit_reset}`);
 }
 
 function formatCredits(value: number): string {
@@ -157,7 +192,7 @@ function printRanking(models: readonly RankedModel[]): void {
     console.log(color.yellow("no free tool-calling models found right now"));
     return;
   }
-  const idWidth = Math.max(...models.map((m) => m.id.length));
+  const idWidth = Math.max(...models.map((m) => m.key.length));
   models.forEach((m, i) => {
     const pick = i === 0 ? color.green("▶") : " ";
     const rank =
@@ -165,14 +200,14 @@ function printRanking(models: readonly RankedModel[]): void {
         ? color.cyan(`#${m.codingRank + 1} coding this week`)
         : color.dim("unranked for coding");
     console.log(
-      `${pick} ${String(i + 1).padStart(2)}. ${m.id.padEnd(idWidth)}  ${color.dim(formatContext(m.contextLength).padStart(5) + " ctx")}  ${rank}`,
+      `${pick} ${String(i + 1).padStart(2)}. ${m.key.padEnd(idWidth)}  ${color.dim(formatContext(m.contextLength).padStart(5) + " ctx")}  ${rank}`,
     );
   });
 }
 
 async function refreshWithSpinner(scout: ModelScout): Promise<void> {
   const spinner = new Spinner();
-  spinner.start("scouting free coding models on OpenRouter");
+  spinner.start("scouting verified-free coding models");
   try {
     await scout.refresh();
   } finally {
@@ -194,7 +229,7 @@ async function watch(scout: ModelScout, pollMinutes: number): Promise<void> {
 
   scout.startPolling(pollMinutes * 60_000, (best) => {
     console.log(
-      `${color.bold(`[${new Date().toLocaleTimeString()}]`)} ${color.green("best model changed →")} ${best.id}`,
+      `${color.bold(`[${new Date().toLocaleTimeString()}]`)} ${color.green("best model changed →")} ${best.key}`,
     );
     printRanking(scout.models);
   });
@@ -203,21 +238,13 @@ async function watch(scout: ModelScout, pollMinutes: number): Promise<void> {
 }
 
 async function runSession(
-  client: OpenRouterClient,
+  clients: readonly ProviderClient[],
   scout: ModelScout,
   pollMinutes: number,
   yolo: boolean,
   oneShotTask?: string,
 ): Promise<void> {
-  if (!client.hasKey) {
-    fail(
-      "Not connected to OpenRouter.\n" +
-        "Run `tether login` (or `tether login --headless` over SSH).\n" +
-        "OPENROUTER_API_KEY remains available as an environment override.",
-    );
-  }
-
-  if (!scout.isPinned) await refreshWithSpinner(scout);
+  await refreshWithSpinner(scout);
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const approveCommand = async (command: string): Promise<boolean> => {
@@ -234,11 +261,15 @@ async function runSession(
     return /^y(es)?$/i.test(answer.trim());
   };
 
-  const agent = new Agent({ client, scout, toolContext: { cwd: process.cwd(), approveCommand } });
+  const agent = new Agent({
+    clients,
+    scout,
+    toolContext: { cwd: process.cwd(), approveCommand },
+  });
 
   // Re-scout on a schedule; a better model takes over on the next request.
   scout.startPolling(pollMinutes * 60_000, (best) => {
-    console.log(color.dim(`● scout: ${best.id} is now the best free coding model; switching`));
+    console.log(color.dim(`● scout: ${best.key} is now the best free coding model; switching`));
   });
 
   if (oneShotTask) {
@@ -257,7 +288,7 @@ async function runSession(
   );
   console.log(
     color.dim(
-      `model: ${best?.id ?? "none"} · re-scouting every ${pollMinutes}m · /help for commands`,
+      `model: ${best?.key ?? "none"} · re-scouting every ${pollMinutes}m · /help for commands`,
     ),
   );
 
@@ -287,17 +318,17 @@ async function runSession(
         scout.useAutomatic();
         scout.startPolling(pollMinutes * 60_000, (next) => {
           console.log(
-            color.dim(`● scout: ${next.id} is now the best free coding model; switching`),
+            color.dim(`● scout: ${next.key} is now the best free coding model; switching`),
           );
         });
-        console.log(color.green(`automatic selection enabled → ${scout.pick()?.id ?? "none"}`));
+        console.log(color.green(`automatic selection enabled → ${scout.pick()?.key ?? "none"}`));
       } else if (cmd === "/status") {
-        console.log(`model: ${scout.pick()?.id ?? "none"}`);
+        console.log(`model: ${scout.pick()?.key ?? "none"}`);
         console.log(
           `selection: ${scout.isPinned ? "pinned" : `automatic (polling every ${pollMinutes}m)`}`,
         );
       } else if (cmd === "/whoami") {
-        await showIdentity(client);
+        await showIdentity(clients);
       } else if (cmd === "/pwd") {
         console.log(process.cwd());
       } else {
@@ -329,7 +360,7 @@ async function chooseModel(
   }
 
   if (!selection) {
-    printModelChoices(scout.models, scout.pick()?.id);
+    printModelChoices(scout.models, scout.pick()?.key);
     selection = (
       await terminal.question(color.cyan("\nSelect a model by number (Enter to cancel): "))
     ).trim();
@@ -338,26 +369,33 @@ async function chooseModel(
 
   const number = Number(selection);
   const chosen = Number.isInteger(number) ? scout.models[number - 1] : undefined;
-  const id = chosen?.id ?? selection;
-  const model = scout.models.find((candidate) => candidate.id === id);
+  const selector = chosen?.key ?? selection;
+  const matches = scout.models.filter(
+    (candidate) => candidate.key === selector || candidate.id === selector,
+  );
+  const model = matches.length === 1 ? matches[0] : undefined;
   if (!model) {
-    console.log(color.yellow(`"${selection}" is not in the current free-model list`));
+    const message =
+      matches.length > 1
+        ? `"${selection}" exists on multiple providers; use the provider:model selector`
+        : `"${selection}" is not in the current free-model list`;
+    console.log(color.yellow(message));
     return;
   }
 
-  scout.pin(model.id);
+  scout.pin(model.key);
   console.log(
-    color.green(`switched to ${model.id}`) + color.dim(" (pinned; /auto to resume scouting)"),
+    color.green(`switched to ${model.key}`) + color.dim(" (pinned; /auto to resume scouting)"),
   );
 }
 
-function printModelChoices(models: readonly RankedModel[], currentId?: string): void {
-  const width = Math.max(...models.map((model) => model.id.length));
+function printModelChoices(models: readonly RankedModel[], currentKey?: string): void {
+  const width = Math.max(...models.map((model) => model.key.length));
   models.forEach((model, index) => {
-    const current = model.id === currentId ? color.green("●") : " ";
+    const current = model.key === currentKey ? color.green("●") : " ";
     const rank = model.codingRank === undefined ? "unranked" : `#${model.codingRank + 1} coding`;
     console.log(
-      `${current} ${String(index + 1).padStart(2)}. ${model.id.padEnd(width)}  ${formatContext(model.contextLength).padStart(5)} ctx  ${color.dim(rank)}`,
+      `${current} ${String(index + 1).padStart(2)}. ${model.key.padEnd(width)}  ${formatContext(model.contextLength).padStart(5)} ctx  ${color.dim(rank)}`,
     );
   });
 }
